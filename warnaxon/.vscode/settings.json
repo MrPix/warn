@@ -1,0 +1,17 @@
+{
+  "idf.currentSetup": "C:\\esp\\v6.1\\esp-idf",
+  "idf.portWin": "COM5",
+  "idf.customExtraVars": {
+    "OPENOCD_SCRIPTS": "C:\\Users\\oleks\\.espressif\\tools\\openocd-esp32\\v0.12.0-esp32-20240318/openocd-esp32/share/openocd/scripts",
+    "IDF_CCACHE_ENABLE": "1",
+    "ESP_ROM_ELF_DIR": "C:\\Users\\oleks\\.espressif\\tools\\esp-rom-elfs\\20240305/",
+    "IDF_TARGET": "esp32"
+  },
+  "clangd.path": "C:\\Espressif\\tools\\esp-clangd\\esp-21.1.3_20260408\\esp-clangd\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=d:\\warn\\warnaxon\\build"
+  ],
+  "idf.flashType": "UART"
+}

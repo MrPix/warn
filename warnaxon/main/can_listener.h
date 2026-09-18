@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -19,6 +20,8 @@ typedef struct {
 	twai_node_handle_t node;
 	QueueHandle_t rx_queue;
 	volatile uint32_t dropped_frames;
+	volatile uint32_t bus_errors;
+	volatile uint32_t state_changes;
 } can_listener_t;
 
 typedef struct {
@@ -31,7 +34,7 @@ typedef struct {
 extern const uint32_t can_bitrates_kbps[CAN_BITRATE_COUNT];
 
 int can_bitrate_index(uint32_t bitrate_kbps);
-esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps);
+esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps, bool listen_only);
 void can_listener_stop(can_listener_t *listener);
 esp_err_t can_transmitter_start(can_transmitter_t *transmitter, uint32_t bitrate_kbps);
 void can_transmitter_stop(can_transmitter_t *transmitter);

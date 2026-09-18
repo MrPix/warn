@@ -115,7 +115,7 @@ static int can_search(int argc, char **argv)
 		}
 		can_listener_t listener;
 		printf("Searching at %" PRIu32 " kbps for %" PRIu32 " seconds...\n", bitrate_kbps, seconds);
-		esp_err_t error = can_listener_start(&listener, bitrate_kbps);
+		esp_err_t error = can_listener_start(&listener, bitrate_kbps, true);
 		if (error != ESP_OK) {
 			if (error == ESP_ERR_INVALID_ARG) {
 				unsupported[bitrate_index] = true;
@@ -139,8 +139,8 @@ static int can_search(int argc, char **argv)
 			}
 		}
 		found[bitrate_index] = frame_count > 0;
-		printf("Result %" PRIu32 " kbps: %" PRIu32 " frames, %" PRIu32 " dropped%s\n",
-			bitrate_kbps, frame_count, listener.dropped_frames, found[bitrate_index] ? ", traffic detected" : "");
+		printf("Result %" PRIu32 " kbps: %" PRIu32 " frames, %" PRIu32 " dropped, %" PRIu32 " bus errors%s\n",
+			bitrate_kbps, frame_count, listener.dropped_frames, listener.bus_errors, found[bitrate_index] ? ", traffic detected" : "");
 		can_listener_stop(&listener);
 		if (bitrate_index == end_index) break;
 	}
@@ -192,7 +192,8 @@ static int can_sniff(int argc, char **argv)
 	}
 
 	can_listener_t listener;
-	esp_err_t error = can_listener_start(&listener, bitrate_kbps);
+	/* Sniff mode ACKs frames so a lone transmitter can complete transfers on a 2-node bus. */
+	esp_err_t error = can_listener_start(&listener, bitrate_kbps, false);
 	if (error != ESP_OK) {
 		if (error == ESP_ERR_INVALID_ARG) {
 			printf("Cannot sniff at %" PRIu32 " kbps: bitrate is not achievable by this ESP32 TWAI clock.\n", bitrate_kbps);
@@ -228,7 +229,7 @@ static int can_sniff(int argc, char **argv)
 		}
 	}
 	fcntl(stdin_fd, F_SETFL, original_flags);
-	printf("Sniff stopped: %" PRIu32 " frames, %" PRIu32 " dropped\n", frame_count, listener.dropped_frames);
+	printf("Sniff stopped: %" PRIu32 " frames, %" PRIu32 " dropped, %" PRIu32 " bus errors\n", frame_count, listener.dropped_frames, listener.bus_errors);
 	can_listener_stop(&listener);
 	return 0;
 }

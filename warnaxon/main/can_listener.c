@@ -49,7 +49,25 @@ static bool IRAM_ATTR can_rx_callback(twai_node_handle_t node, const twai_rx_don
 	return task_woken == pdTRUE;
 }
 
-esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps)
+static bool IRAM_ATTR can_error_callback(twai_node_handle_t node, const twai_error_event_data_t *event, void *user_ctx)
+{
+	(void)node;
+	(void)event;
+	can_listener_t *listener = user_ctx;
+	listener->bus_errors++;
+	return false;
+}
+
+static bool IRAM_ATTR can_state_change_callback(twai_node_handle_t node, const twai_state_change_event_data_t *event, void *user_ctx)
+{
+	(void)node;
+	(void)event;
+	can_listener_t *listener = user_ctx;
+	listener->state_changes++;
+	return false;
+}
+
+esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps, bool listen_only)
 {
 	memset(listener, 0, sizeof(*listener));
 	listener->rx_queue = xQueueCreate(CAN_RX_QUEUE_DEPTH, sizeof(can_rx_frame_t));
@@ -66,7 +84,8 @@ esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps)
 		},
 		.bit_timing.bitrate = bitrate_kbps * 1000,
 		.timestamp_resolution_hz = CAN_TIMESTAMP_HZ,
-		.flags.enable_listen_only = true,
+		.tx_queue_depth = listen_only ? 0 : 1,
+		.flags.enable_listen_only = listen_only,
 	};
 	esp_err_t error = twai_new_node_onchip(&config, &listener->node);
 	if (error != ESP_OK) {
@@ -77,6 +96,8 @@ esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps)
 
 	const twai_event_callbacks_t callbacks = {
 		.on_rx_done = can_rx_callback,
+		.on_error = can_error_callback,
+		.on_state_change = can_state_change_callback,
 	};
 	error = twai_node_register_event_callbacks(listener->node, &callbacks, listener);
 	if (error == ESP_OK) {

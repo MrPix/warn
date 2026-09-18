@@ -19,6 +19,8 @@
 #define CAN_SEARCH_DEFAULT_SECONDS 20
 #define CAN_SEARCH_MAX_SECONDS 3600
 
+static can_transmitter_t can_transmitter;
+
 static bool parse_u32_arg(const char *value, uint32_t min, uint32_t max, uint32_t *result)
 {
 	char *end = NULL;
@@ -38,7 +40,21 @@ static void can_print_usage(void)
 	printf("Usage:\n");
 	printf("  can search [--start <kbps>] [--end <kbps>] [--time <seconds>]\n");
 	printf("  can sniff --bitrate <kbps>\n");
+	printf("  can setbitrate <kbps>\n");
+	printf("  can send <id> [byte ...]\n");
 	printf("Bitrates: 10, 20, 50, 100, 125, 250, 500, 800, 1000 kbps\n");
+}
+
+static bool parse_hex_u32_arg(const char *value, uint32_t max, uint32_t *result)
+{
+	char *end = NULL;
+	errno = 0;
+	unsigned long parsed = strtoul(value, &end, 16);
+	if (errno != 0 || end == value || *end != '\0' || parsed > max) {
+		return false;
+	}
+	*result = (uint32_t)parsed;
+	return true;
 }
 
 static bool can_parse_option(int argc, char **argv, int *index, uint32_t min, uint32_t max, uint32_t *value)
@@ -53,6 +69,7 @@ static bool can_parse_option(int argc, char **argv, int *index, uint32_t min, ui
 
 static int can_search(int argc, char **argv)
 {
+	can_transmitter_stop(&can_transmitter);
 	uint32_t start_kbps = can_bitrates_kbps[0];
 	uint32_t end_kbps = can_bitrates_kbps[CAN_BITRATE_COUNT - 1];
 	uint32_t seconds = CAN_SEARCH_DEFAULT_SECONDS;
@@ -151,6 +168,7 @@ static int can_search(int argc, char **argv)
 
 static int can_sniff(int argc, char **argv)
 {
+	can_transmitter_stop(&can_transmitter);
 	uint32_t bitrate_kbps = 0;
 	bool have_bitrate = false;
 	for (int index = 2; index < argc; ++index) {
@@ -215,6 +233,69 @@ static int can_sniff(int argc, char **argv)
 	return 0;
 }
 
+static int can_setbitrate(int argc, char **argv)
+{
+	uint32_t bitrate_kbps;
+	if (argc != 3 || !parse_u32_arg(argv[2], 1, 1000, &bitrate_kbps) || can_bitrate_index(bitrate_kbps) < 0) {
+		printf("Usage: can setbitrate <kbps>\n");
+		return 1;
+	}
+	if (bitrate_kbps == 10) {
+		printf("Cannot set 10 kbps: bitrate is not achievable by the ESP32 TWAI clock.\n");
+		return 1;
+	}
+
+	can_transmitter_stop(&can_transmitter);
+	esp_err_t error = can_transmitter_start(&can_transmitter, bitrate_kbps);
+	if (error != ESP_OK) {
+		printf("Cannot set CAN bitrate to %" PRIu32 " kbps: %s\n", bitrate_kbps, esp_err_to_name(error));
+		return 1;
+	}
+	printf("CAN transmit bitrate set to %" PRIu32 " kbps\n", bitrate_kbps);
+	return 0;
+}
+
+static int can_send(int argc, char **argv)
+{
+	if (can_transmitter.node == NULL) {
+		printf("Set a bitrate first with: can setbitrate <kbps>\n");
+		return 1;
+	}
+	if (argc < 3 || argc > 11) {
+		printf("Usage: can send <hex-id> [hex-byte ...]\n");
+		return 1;
+	}
+
+	uint32_t id;
+	if (!parse_hex_u32_arg(argv[2], TWAI_STD_ID_MASK, &id)) {
+		printf("Invalid standard CAN ID: %s\n", argv[2]);
+		return 1;
+	}
+
+	uint8_t data[TWAI_FRAME_MAX_LEN];
+	uint8_t data_len = (uint8_t)(argc - 3);
+	for (uint8_t index = 0; index < data_len; ++index) {
+		uint32_t byte;
+		if (!parse_hex_u32_arg(argv[index + 3], UINT8_MAX, &byte)) {
+			printf("Invalid CAN data byte: %s\n", argv[index + 3]);
+			return 1;
+		}
+		data[index] = (uint8_t)byte;
+	}
+
+	esp_err_t error = can_transmitter_send(&can_transmitter, id, data, data_len);
+	if (error != ESP_OK) {
+		printf("CAN transmit failed: %s\n", esp_err_to_name(error));
+		return 1;
+	}
+	printf("Sent STD %03" PRIX32 " [%u]", id, data_len);
+	for (uint8_t index = 0; index < data_len; ++index) {
+		printf(" %02X", data[index]);
+	}
+	printf("\n");
+	return 0;
+}
+
 static int cmd_can(int argc, char **argv)
 {
 	if (argc < 2) {
@@ -228,6 +309,12 @@ static int cmd_can(int argc, char **argv)
 	if (strcmp(argv[1], "sniff") == 0) {
 		return can_sniff(argc, argv);
 	}
+	if (strcmp(argv[1], "setbitrate") == 0) {
+		return can_setbitrate(argc, argv);
+	}
+	if (strcmp(argv[1], "send") == 0) {
+		return can_send(argc, argv);
+	}
 
 	printf("Unknown CAN command: %s\n", argv[1]);
 	can_print_usage();
@@ -238,8 +325,8 @@ void register_can_commands(void)
 {
 	const esp_console_cmd_t can_cmd = {
 		.command = "can",
-		.help = "Search or sniff a classic CAN bus in listen-only mode",
-		.hint = "search [--start kbps] [--end kbps] [--time seconds] | sniff --bitrate kbps",
+		.help = "Search, sniff, configure, or transmit classic CAN frames",
+		.hint = "search [--start kbps] [--end kbps] [--time seconds] | sniff --bitrate kbps | setbitrate kbps | send hex-id [hex-byte ...]",
 		.func = &cmd_can,
 	};
 	ESP_ERROR_CHECK(esp_console_cmd_register(&can_cmd));

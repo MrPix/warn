@@ -1,8 +1,8 @@
 # Warnaxon
 
-ESP32 classic CAN bus discovery and sniffing over an SN65HVD230 transceiver.
-The firmware uses the ESP32 TWAI controller in listen-only mode, so it does not
-transmit frames or acknowledge received frames.
+ESP32 classic CAN bus discovery, sniffing, and transmission over an SN65HVD230
+transceiver. Discovery and sniffing use listen-only mode; transmission uses
+normal TWAI mode and therefore participates in CAN acknowledgements and errors.
 
 ## Wiring
 
@@ -44,10 +44,11 @@ should normally be about 60 ohms because the two terminators are in parallel.
 Do not add another termination resistor when connecting the sniffer to an
 already correctly terminated bus. Keep the CANH/CANL stub to the sniffer short.
 
-Because Warnaxon operates in listen-only mode, another active CAN node must
-acknowledge transmitted frames. A test setup containing only one transmitter
-and this sniffer may produce repeated transmissions or CAN errors because the
-sniffer deliberately does not send acknowledgements.
+When Warnaxon is sniffing, it operates in listen-only mode, so another active
+CAN node must acknowledge transmitted frames. A test setup containing only one
+transmitter and this sniffer may produce repeated transmissions or CAN errors
+because the sniffer deliberately does not send acknowledgements. The
+`can send` command uses normal mode and can transmit acknowledgements.
 
 ## Commands
 
@@ -80,6 +81,18 @@ can sniff --bitrate 500
 Press lowercase `c` to stop sniffing. Each frame includes the bitrate, the
 TWAI hardware timestamp in microseconds, the time since the previous frame,
 the standard or extended identifier, DLC, RTR state, and payload bytes.
+
+Configure a persistent transmit bitrate and send a standard frame:
+
+```text
+can setbitrate 500
+can send 0x123 DE AD BE EF
+```
+
+The transmit command accepts a standard 11-bit hexadecimal ID and zero to eight
+hexadecimal data bytes. Run `can setbitrate` again to change the transmit
+bitrate. Running `can search` or `can sniff` stops the transmitter before
+entering listen-only mode.
 
 ## Build And Flash
 

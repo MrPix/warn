@@ -91,6 +91,57 @@ esp_err_t can_listener_start(can_listener_t *listener, uint32_t bitrate_kbps)
 	return error;
 }
 
+esp_err_t can_transmitter_start(can_transmitter_t *transmitter, uint32_t bitrate_kbps)
+{
+	memset(transmitter, 0, sizeof(*transmitter));
+	twai_onchip_node_config_t config = {
+		.io_cfg = {
+			.tx = CAN_TX_GPIO,
+			.rx = CAN_RX_GPIO,
+			.quanta_clk_out = GPIO_NUM_NC,
+			.bus_off_indicator = GPIO_NUM_NC,
+		},
+		.bit_timing.bitrate = bitrate_kbps * 1000,
+		.timestamp_resolution_hz = CAN_TIMESTAMP_HZ,
+		.tx_queue_depth = 4,
+	};
+	esp_err_t error = twai_new_node_onchip(&config, &transmitter->node);
+	if (error != ESP_OK) {
+		return error;
+	}
+	error = twai_node_enable(transmitter->node);
+	if (error != ESP_OK) {
+		twai_node_delete(transmitter->node);
+		transmitter->node = NULL;
+		return error;
+	}
+	transmitter->bitrate_kbps = bitrate_kbps;
+	return ESP_OK;
+}
+
+void can_transmitter_stop(can_transmitter_t *transmitter)
+{
+	if (transmitter->node != NULL) {
+		twai_node_disable(transmitter->node);
+		twai_node_delete(transmitter->node);
+		transmitter->node = NULL;
+	}
+	transmitter->bitrate_kbps = 0;
+}
+
+esp_err_t can_transmitter_send(can_transmitter_t *transmitter, uint32_t id, const uint8_t *data, uint8_t data_len)
+{
+	twai_frame_t frame = {
+		.header = {
+			.id = id,
+			.dlc = data_len,
+		},
+		.buffer = (uint8_t *)data,
+		.buffer_len = data_len,
+	};
+	return twai_node_transmit(transmitter->node, &frame, 1000);
+}
+
 void can_listener_stop(can_listener_t *listener)
 {
 	if (listener->node != NULL) {
